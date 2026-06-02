@@ -61,7 +61,23 @@ rm -rf /www/server/panel/logs/* /www/server/panel/temp/* 2>/dev/null || true
 # Drop any pre-generated SSL/session state so it is regenerated per deployment.
 rm -f /www/server/panel/data/ssl.pl 2>/dev/null || true
 
+echo "==> Stopping any remaining panel processes before packaging..."
+/etc/init.d/bt stop || true
+pkill -9 -f 'BT-Panel|BT-Tasks|/www/server/panel' 2>/dev/null || true
+sleep 2
+
 echo "==> Packaging /www into a first-run seed tarball..."
-tar czpf /opt/aapanel/www-seed.tar.gz -C / www
+# tar exits 1 with "file changed as we read it" if a daemon touches /www
+# mid-archive. For our freshly-installed tree that warning is harmless, so we
+# tolerate exit code 1 but still fail on exit code >= 2 (real tar errors).
+set +e
+tar czpf /opt/aapanel/www-seed.tar.gz --warning=no-file-changed -C / www
+rc=$?
+set -e
+if [ "$rc" -gt 1 ]; then
+    echo "ERROR: tar failed with exit code $rc" >&2
+    exit "$rc"
+fi
+
 rm -rf /www
 echo "==> Done. Seed size: $(du -h /opt/aapanel/www-seed.tar.gz | cut -f1)"
