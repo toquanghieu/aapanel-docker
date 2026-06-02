@@ -53,6 +53,19 @@ INSTALLED=$(grep -rohE "version[[:space:]]*=[[:space:]]*['\"][0-9][0-9.]+" \
 echo "${INSTALLED:-$AAPANEL_VERSION}" > /opt/aapanel/VERSION
 echo "==> Installed aaPanel version: $(cat /opt/aapanel/VERSION)"
 
+echo "==> Hardening: removing the build toolchain (not needed at runtime)..."
+# aaPanel pulls in build-essential (gcc/g++/make/libc6-dev) during install, and
+# libc6-dev drags in linux-libc-dev whose kernel-header CVEs have no fix and are
+# not exploitable inside a container. aaPanel installs runtime software from
+# precompiled packages, so this toolchain is build-time-only. Purging it clears
+# those CVEs and trims a few hundred MB from the image.
+apt-get update
+apt-get upgrade -y
+apt-get purge -y \
+    build-essential gcc g++ cpp make dpkg-dev \
+    libc6-dev linux-libc-dev 2>/dev/null || true
+apt-get autoremove --purge -y
+
 echo "==> Cleaning up caches, logs and temp files..."
 rm -f /tmp/install_panel_en.sh
 apt-get clean
