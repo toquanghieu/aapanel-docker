@@ -91,7 +91,7 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
           repository: hieutq/aapanel
-          short-description: "aaPanel in Docker - panel-only, single /www volume, no privileged mode, multi-arch, auto-updated daily"
+          short-description: "aaPanel in Docker: panel-only, single /www volume, multi-arch, no-privileged, auto-updated daily"
           readme-filepath: ./README.md
 
       - name: Create GitHub Release
