@@ -1,0 +1,27 @@
+services:
+  aapanel:
+    image: hieutq/aapanel:latest
+    container_name: aapanel
+    restart: unless-stopped
+    environment:
+      - AAPANEL_PORT=${AAPANEL_PORT:-8888}
+      # Leave the next four unset to auto-generate secure random credentials
+      # on first run (printed to `docker logs aapanel`).
+      # - AAPANEL_USERNAME=admin
+      # - AAPANEL_PASSWORD=change-me-please
+      # - AAPANEL_ENTRY=/my-secret-entry
+      # - AAPANEL_SSL=off
+    ports:
+      - "${AAPANEL_PORT:-8888}:8888"   # aaPanel web UI
+      - "80:80"                        # HTTP   (after you install a web server)
+      - "443:443"                      # HTTPS
+      # Uncomment as you enable the matching services from the panel:
+      # - "888:888"                    # phpMyAdmin
+      # - "21:21"                      # FTP
+      # - "20:20"                      # FTP data
+      # - "3306:3306"                  # MySQL
+    volumes:
+      - aapanel_data:/www
+
+volumes:
+  aapanel_data:

@@ -1,0 +1,90 @@
+name: Check for Updates
+
+on:
+  schedule:
+    - cron: "0 6 * * *" # Every day at 06:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write
+
+env:
+  # Official aaPanel version endpoint - the same API the panel's "Update"
+  # button calls. The `.version` field is the latest stable free release.
+  VERSION_API: https://www.aapanel.com/api/panel/updateLinuxEn
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Current version (from Dockerfile)
+        id: current
+        run: |
+          CUR=$(grep -oP '^ARG AAPANEL_VERSION=\K[0-9.]+' Dockerfile)
+          echo "version=$CUR" >> "$GITHUB_OUTPUT"
+          echo "Current: $CUR"
+
+      - name: Latest version (from aaPanel API)
+        id: latest
+        run: |
+          NEW=$(curl -fsSL "$VERSION_API" 2>/dev/null | jq -r '.version' 2>/dev/null | sed 's/^v//' || true)
+          echo "version=$NEW" >> "$GITHUB_OUTPUT"
+          echo "Latest: ${NEW:-?}"
+
+      - name: Compare versions
+        id: compare
+        run: |
+          CUR="${{ steps.current.outputs.version }}"
+          NEW="${{ steps.latest.outputs.version }}"
+
+          # Keep current unless the API returned a sane, different value.
+          UPDATE=false
+          if [ -n "$NEW" ] && [ "$NEW" != "null" ] && [ "$NEW" != "$CUR" ]; then
+            echo "aaPanel: $CUR -> $NEW"
+            UPDATE=true
+          else
+            echo "Already up to date ($CUR)"
+          fi
+
+          echo "update=$UPDATE" >> "$GITHUB_OUTPUT"
+          echo "version=${NEW:-$CUR}" >> "$GITHUB_OUTPUT"
+
+      - name: Bump Dockerfile version
+        if: steps.compare.outputs.update == 'true'
+        run: |
+          V="${{ steps.compare.outputs.version }}"
+          sed -i "s/^ARG AAPANEL_VERSION=[0-9.]\+/ARG AAPANEL_VERSION=$V/" Dockerfile
+          grep -nE '^ARG AAPANEL_VERSION=' Dockerfile
+
+      - name: Commit and tag
+        if: steps.compare.outputs.update == 'true'
+        run: |
+          V="${{ steps.compare.outputs.version }}"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Dockerfile
+          git commit -m "chore: bump aaPanel to $V"
+          git tag "v$V" || echo "tag already exists"
+          git push origin main
+          git push origin "v$V" || true
+
+      - name: Trigger build workflow
+        if: steps.compare.outputs.update == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.actions.createWorkflowDispatch({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              workflow_id: 'build.yml',
+              ref: 'main',
+              inputs: {
+                version: '${{ steps.compare.outputs.version }}'
+              }
+            });

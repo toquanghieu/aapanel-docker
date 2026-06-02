@@ -1,0 +1,15 @@
+# Local env (use .env.example as the template)
+.env
+
+# Build / local data
+*.tar
+*.tar.gz
+www/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/

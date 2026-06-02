@@ -1,0 +1,101 @@
+name: Build and Push
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "aaPanel version to tag (leave empty to use the Dockerfile ARG)"
+        required: false
+        default: ""
+
+env:
+  DOCKER_IMAGE: hieutq/aapanel
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 40
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Determine version
+        id: version
+        run: |
+          if [ -n "${{ github.event.inputs.version }}" ]; then
+            VERSION="${{ github.event.inputs.version }}"
+          else
+            VERSION=$(grep -oP '^ARG AAPANEL_VERSION=\K[0-9.]+' Dockerfile)
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Building aaPanel $VERSION (${{ matrix.arch }})"
+
+      - name: Build image
+        run: |
+          docker build \
+            --build-arg AAPANEL_VERSION=${{ steps.version.outputs.version }} \
+            -t $DOCKER_IMAGE:${{ steps.version.outputs.version }}-${{ matrix.arch }} \
+            .
+          echo "==> Built image size:"
+          docker images $DOCKER_IMAGE:${{ steps.version.outputs.version }}-${{ matrix.arch }}
+
+      - name: Login and push
+        run: |
+          echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
+          docker push $DOCKER_IMAGE:${{ steps.version.outputs.version }}-${{ matrix.arch }}
+
+  manifest:
+    needs: [build]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Determine version
+        id: version
+        run: |
+          if [ -n "${{ github.event.inputs.version }}" ]; then
+            VERSION="${{ github.event.inputs.version }}"
+          else
+            VERSION=$(grep -oP '^ARG AAPANEL_VERSION=\K[0-9.]+' Dockerfile)
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Login to Docker Hub
+        run: echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
+
+      - name: Create and push multi-arch manifests
+        run: |
+          V="${{ steps.version.outputs.version }}"
+          for TAG in "$V" latest; do
+            docker manifest create $DOCKER_IMAGE:$TAG \
+              $DOCKER_IMAGE:$V-amd64 \
+              $DOCKER_IMAGE:$V-arm64
+            docker manifest push $DOCKER_IMAGE:$TAG
+          done
+
+      - name: Update Docker Hub description
+        uses: peter-evans/dockerhub-description@v4
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          repository: hieutq/aapanel
+          short-description: "aaPanel in Docker - panel-only, single /www volume, no privileged mode, multi-arch, auto-updated daily"
+          readme-filepath: ./README.md
+
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
