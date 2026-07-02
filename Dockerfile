@@ -6,7 +6,7 @@ LABEL org.opencontainers.image.licenses="MIT"
 
 # Version is bumped automatically by .github/workflows/check-update.yml when a
 # new stable aaPanel release is detected via the official version API.
-ARG AAPANEL_VERSION=8.0.3
+ARG AAPANEL_VERSION=8.0.4
 ENV AAPANEL_VERSION=${AAPANEL_VERSION} \
     DEBIAN_FRONTEND=noninteractive \
     LANG=C.UTF-8 \
